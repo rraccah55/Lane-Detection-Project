@@ -6,8 +6,8 @@ import cv2
 figsize = (10, 10)
 
 # TODO find right parameter
-mask_point1 = (500,680)
-mask_point2 = (900,980)
+mask_point1 = (600,580)
+mask_point2 = (1200,1280)
 
 
 def mask_frame(img, vertices):
@@ -42,21 +42,22 @@ def filter_lines(lines, slope_threshold=(0.5, 2)):
     return np.array(right_lines), np.array(left_lines)
 
 def preprocess_frame(frame):
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # brg to gray
+    temp = frame.copy()
+    temp = cv2.cvtColor(temp, cv2.COLOR_BGR2GRAY)  # brg to gray
 
-    _, frame = cv2.threshold(frame, 150, 255, cv2.THRESH_BINARY)  # applying threshold to emphasize white
+    #_, temp = cv2.threshold(temp, 50, 255, cv2.THRESH_BINARY)  # applying threshold to emphasize white
 
-    frame = cv2.GaussianBlur(frame, (7, 7), 0)  # reducing noise
+    temp = cv2.GaussianBlur(temp, (7, 7), 0)  # reducing noise
 
-    frame = cv2.Canny(frame, 50, 170)  # applying canny to get edges
+    temp = cv2.Canny(temp, 5, 100)  # applying canny to get edges
 
-    frame = mask_frame(frame, [mask_point1,mask_point2])
+    temp = mask_frame(temp, [mask_point1,mask_point2])
 
-    return frame
+    return temp
 
 
 if __name__ == "__main__":
-    video_path = 'input.mp4'
+    video_path = 'video.mp4'
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
