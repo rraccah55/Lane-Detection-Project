@@ -50,7 +50,7 @@ def preprocess_frame(frame):
     temp = frame.copy()
     temp = cv2.cvtColor(temp, cv2.COLOR_BGR2GRAY)  # brg to gray
 
-    #_, temp = cv2.threshold(temp, 50, 255, cv2.THRESH_BINARY)  # applying threshold to emphasize white
+    _, temp = cv2.threshold(temp, 150, 255, cv2.THRESH_BINARY)  # applying threshold to emphasize white
 
     temp = cv2.GaussianBlur(temp, (7, 7), 0)  # reducing noise
 
@@ -82,7 +82,7 @@ if __name__ == "__main__":
 
     # Go over the different segments
     frames = []
-    for frame_num in range(0, frame_count, (fps // wanted_fps)): # TODO make sure which "jump" is the best one
+    for frame_num in range(0, frame_count, (fps // wanted_fps)):
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
         ret, frame = cap.read()
         if not ret:
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         image = frame.copy()
         image = preprocess_frame(image)
         # TODO need to find good parameters
-        lines = cv2.HoughLinesP(image, rho=1, theta=np.pi / 180, threshold=10, minLineLength=10, maxLineGap=200)
+        lines = cv2.HoughLinesP(image, rho=1, theta=np.pi / 180, threshold=10, minLineLength=50, maxLineGap=1000)
 
         right_lines, left_lines = filter_lines(lines, slope_threshold=(0.5, 2))
 
@@ -104,14 +104,12 @@ if __name__ == "__main__":
         if len(left_lines) != 0:
             best_lines.append(left_lines.mean(axis=1))
 
-        # # TODO there is a chance that because we found the points with the masked image, we need to scale them back to
-        # #  the original image
         restTemp = draw_lines(restTemp, lines)
         res = draw_lines(res, best_lines)
 
         #TODO add function to detect lane change
         frames.append(res)
-    #TODO need to reconstruct video from frames
+    
     out = cv2.VideoWriter('temp.avi',cv2.VideoWriter_fourcc(*'DIVX'), wanted_fps, (frame_width, frame_height))
     
     for frame in frames:
