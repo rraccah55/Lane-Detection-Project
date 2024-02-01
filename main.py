@@ -6,21 +6,26 @@ import cv2
 figsize = (10, 10)
 
 # TODO find right parameter
-mask_point1 = (600,580)
-mask_point2 = (1200,1280)
+# mask_point_upper_left = np.array([800,600], np.int32)
+# mask_point_upper_right = np.array([1200, 600], np.int32)
+# mask_point_lower_left = np.array([800,1920], np.int32)
+# mask_point_lower_right = np.array([1200, 1920], np.int32)
 
+vertices = np.array([[900,600], [1300, 600], [1500, 1080], [600, 1080]], np.int32)
+vertices = vertices.reshape((-1, 1, 2))
 
 def mask_frame(img, vertices):
     mask = np.zeros_like(img)
-    cv2.rectangle(mask, vertices[0], vertices[1], 255, -1)
+    
+    mask = cv2.fillPoly(mask, [vertices], (255, 255, 255) , 0)
     masked_img = cv2.bitwise_and(img, mask)
     return masked_img
 
 
 def draw_lines(img, lines, color=(0, 255, 0), thickness=3):
     for line in lines:
-        for x1, y1, x2, y2 in line:
-            img = cv2.line(img, (x1, y1), (x2, y2), color, thickness)
+        x1, y1, x2, y2 = line[0]
+        img = cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness)
     return img
 
 
@@ -51,7 +56,7 @@ def preprocess_frame(frame):
 
     temp = cv2.Canny(temp, 5, 100)  # applying canny to get edges
 
-    temp = mask_frame(temp, [mask_point1,mask_point2])
+    temp = mask_frame(temp, vertices)
 
     return temp
 
@@ -64,13 +69,11 @@ if __name__ == "__main__":
         print("Could not load video file")
 
     # Define the start and end time for the 20-second segment for initial debug
-    start_time = 0
-    end_time = start_time + 1  # seconds
+    wanted_fps = 30
 
     # Set frame rate and calculate the frames to capture
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    start_frame = int(start_time * fps)
-    end_frame = int(end_time * fps)
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -79,33 +82,42 @@ if __name__ == "__main__":
 
     # Go over the different segments
     frames = []
-    for frame_num in range(start_frame, end_frame, int(fps)): # TODO make sure which "jump" is the best one
+    for frame_num in range(0, frame_count, (fps // wanted_fps)): # TODO make sure which "jump" is the best one
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
         ret, frame = cap.read()
         if not ret:
             print("Could not load the frame")
             break
 
         res = frame.copy()
+        restTemp = frame.copy()
         image = frame.copy()
         image = preprocess_frame(image)
         # TODO need to find good parameters
-        res = cv2.HoughLinesP(image, rho=1, theta=np.pi / 180, threshold=30, minLineLength=50, maxLineGap=10)
+        lines = cv2.HoughLinesP(image, rho=1, theta=np.pi / 180, threshold=10, minLineLength=10, maxLineGap=200)
 
-        right_lines, left_lines = filter_lines(res, slope_threshold=(0.5, 2))
+        right_lines, left_lines = filter_lines(lines, slope_threshold=(0.5, 2))
 
         best_lines = []
         if len(right_lines) != 0:
             best_lines.append(right_lines.mean(axis=1))
         if len(left_lines) != 0:
-            best_lines.append(right_lines.mean(axis=1))
+            best_lines.append(left_lines.mean(axis=1))
 
-        # TODO there is a chance that because we found the points with the masked image, we need to scale them back to
-        #  the original image
+        # # TODO there is a chance that because we found the points with the masked image, we need to scale them back to
+        # #  the original image
+        restTemp = draw_lines(restTemp, lines)
         res = draw_lines(res, best_lines)
 
         #TODO add function to detect lane change
         frames.append(res)
     #TODO need to reconstruct video from frames
+    out = cv2.VideoWriter('temp.avi',cv2.VideoWriter_fourcc(*'DIVX'), wanted_fps, (frame_width, frame_height))
+    
+    for frame in frames:
+        out.write(frame)
+    
+    out.release()
 
     # Release the video capture object
     cap.release()
