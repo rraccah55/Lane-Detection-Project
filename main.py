@@ -4,7 +4,7 @@ import cv2
 
 # hyperparameters
 figsize = (20, 20)
-show = True
+show = False
 upper_bound = 700
 lower_bound = 1080
 
@@ -14,6 +14,9 @@ vertices_left = vertices_left.reshape((-1, 1, 2))
 vertices_right = np.array([[1000, 620], [1300, 620],[1700, 1080], [1000, 1080]], np.int32)
 vertices_right = vertices_right.reshape((-1, 1, 2))
 
+is_turning = False
+frames_until_turning = 5
+turning_direction = None
 
 def add_text_overlay(frame, text, font_size=1.0):
     # Choose font and position
@@ -22,6 +25,7 @@ def add_text_overlay(frame, text, font_size=1.0):
 
     # Add text to the frame
     cv2.putText(frame, text, position, font, font_size, (255, 0, 0), 6, cv2.LINE_AA)
+
 def resize_line(line):
     x1, y1, x2, y2 = line
     slope = calculate_slope(x1, x2, y1, y2)
@@ -82,12 +86,7 @@ def preprocess_frame(frame):
         plt.title("canny")
         plt.show()
 
-    temp_left = mask_frame(temp,vertices_left)
-    temp_right = mask_frame(temp,vertices_right)
-
-
-
-    return temp_left, temp_right
+    return mask_frame(temp,vertices_left), mask_frame(temp,vertices_right)
 
 def get_line_and_detect_change(left_lines, right_lines):
     best_lines = []
@@ -110,31 +109,28 @@ if __name__ == "__main__":
     if not cap.isOpened():
         print("Could not load video file")
 
-    # # Define the start and end time for the 20-second segment for initial debug
-    # start_time = 15
-    # end_time = start_time + 5  # seconds
-    #
-    # # Set frame rate and calculate the frames to capture
-    # fps = cap.get(cv2.CAP_PROP_FPS)
-    # start_frame = int(start_time * fps)
-    # end_frame = int(end_time * fps)
-
     # # Set frame rate and calculate the frames to capture
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     print(f"{frame_count} frames")
+    print(f"{fps} fps")
 
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    wanted_fps = 1
 
+    turning_counter = 0
     # Go over the different segments
     frames = []
-    for frame_num in range(0, 1):#frame_count):
-        cap.set(cv2.CAP_PROP_POS_FRAMES,187)#frame_num)
+    # for frame_num in range(0, 1):#frame_count):
+    for frame_num in range(0, frame_count, wanted_fps):
+        # cap.set(cv2.CAP_PROP_POS_FRAMES,187)#frame_num)
+        cap.set(cv2.CAP_PROP_POS_FRAMES,frame_num)
         ret, frame = cap.read()
-        if not ret:
-            print("Could not load the frame")
-            break
+        # if not ret:
+        #     print("Could not load the frame")
+        #     break
 
         res = frame.copy()
         restTemp = frame.copy()
@@ -163,14 +159,58 @@ if __name__ == "__main__":
 
         lines, change, direction = get_line_and_detect_change(left_lines, right_lines)
 
-        if change == True:
-            print(f"{frame_num=} {change=} {direction=}")
-            # plt.figure(figsize=figsize)
-            # plt.imshow(res)
-            # plt.show()
-            add_text_overlay(res,direction,5)
+        if change:
+            if not is_turning:
+                if turning_counter == 0:
+                    turning_direction = direction
+                    turning_counter+= 1
+                    res = draw_lines(res, lines)
+                elif turning_counter < frames_until_turning:
+                    if not turning_direction == direction:
+                        turning_counter = 0
+                        turning_direction = direction
+                    else:
+                        turning_counter+= 1
+                    
+                    res = draw_lines(res, lines)
+                else:
+                    print(f"{frame_num=} {change=} {turning_direction=}")
+                    # plt.figure(figsize=figsize)
+                    # plt.imshow(res)
+                    # plt.show()
+                    add_text_overlay(res,turning_direction,5)
+                    is_turning = True
+                    turning_counter = 0
+            else:
+                print(f"{frame_num=} {change=} {turning_direction=}")
+                # plt.figure(figsize=figsize)
+                # plt.imshow(res)
+                # plt.show()
+                add_text_overlay(res,turning_direction,5)
         else:
-            res = draw_lines(res, lines)
+            if is_turning:
+                if turning_counter < frames_until_turning:
+                    turning_counter+= 1
+                else:
+                    is_turning = False
+                    turning_counter = 0
+                    res = draw_lines(res, lines)
+            else:
+                res = draw_lines(res, lines)
+
+
+        # if change == True and turning_counter < frames_until_turning:
+        #     frames_until_turning+=1
+        # elif change == True:
+        #     print(f"{frame_num=} {change=} {direction=}")
+        #     # plt.figure(figsize=figsize)
+        #     # plt.imshow(res)
+        #     # plt.show()
+        #     add_text_overlay(res,direction,5)
+        # else:
+        #     res = draw_lines(res, lines)
+            
+        
         if show:
             plt.figure(figsize=figsize)
             plt.imshow(res)
