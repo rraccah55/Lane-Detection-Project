@@ -17,6 +17,7 @@ vertices_right = vertices_right.reshape((-1, 1, 2))
 is_turning = False
 frames_until_turning = 5
 turning_direction = None
+wanted_fps = 10
 
 def add_text_overlay(frame, text, font_size=1.0):
     # Choose font and position
@@ -117,14 +118,12 @@ if __name__ == "__main__":
 
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
-    wanted_fps = 1
 
     turning_counter = 0
     # Go over the different segments
     frames = []
     # for frame_num in range(0, 1):#frame_count):
-    for frame_num in range(0, frame_count, wanted_fps):
+    for frame_num in range(0, frame_count, fps // wanted_fps):
         # cap.set(cv2.CAP_PROP_POS_FRAMES,187)#frame_num)
         cap.set(cv2.CAP_PROP_POS_FRAMES,frame_num)
         ret, frame = cap.read()
@@ -218,7 +217,7 @@ if __name__ == "__main__":
 
         frames.append(res)
     
-    out = cv2.VideoWriter('temp.avi',cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_width, frame_height))
+    out = cv2.VideoWriter('temp.avi',cv2.VideoWriter_fourcc(*'DIVX'), wanted_fps, (frame_width, frame_height))
     
     for frame in frames:
         out.write(frame)
