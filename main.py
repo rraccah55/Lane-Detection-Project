@@ -4,22 +4,26 @@ import cv2
 
 # hyperparameters
 FIGSIZE = (20, 20)
-UPPER_BOUND = 700
-LOWER_BOUND = 1080
 FRAMES_UNTIL_TURNING = 10
 WANTED_FPS = 30
-VERTICES_LEFT = np.array([[450, 1070], [900,620], [1000, 620], [1000, 1070]], np.int32).reshape((-1, 1, 2))
-VERTICES_RIGHT = np.array([[1000, 650], [1250, 650],[1700, 1070], [1000, 1070]], np.int32).reshape((-1, 1, 2))
 NUM_OF_FRAME_FOR_LANE_CHANGE = 60
+show = False  # for debug
 
 
-# UPPER_BOUND = 410
-# LOWER_BOUND = 550
-# VERTICES_LEFT = np.array([[450, 530], [450,380], [380, 380], [180, 530]], np.int32).reshape((-1, 1, 2))
-# VERTICES_RIGHT = np.array([[600, 380], [500, 380], [550, 530], [750, 530]], np.int32).reshape((-1, 1, 2))
+class Parameters:
+    def __init__(self, upper_bound, lower_bound, vertices, is_night, lower_threshold, min_line_length):
+        self.upper_bound = upper_bound
+        self.lower_bound = lower_bound
+        self.vertices = np.array(vertices, np.int32).reshape((-1, 1, 2))
+        self.is_night = is_night
+        self.lower_threshold = lower_threshold
+        self.min_line_length = min_line_length
 
 
-show = False
+parameters_day = Parameters(700, 1080, [[450, 1050], [900, 620], [1250, 650], [1700, 1050]], False, 150, 40)
+parameters_night = Parameters(410, 550, [[380, 380], [180, 530], [600, 380], [750, 530]], True, 115, 10)
+
+
 def add_text_overlay(frame, text, font_size=1.0):
     # Choose font and position
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -28,89 +32,97 @@ def add_text_overlay(frame, text, font_size=1.0):
     # Add text to the frame
     cv2.putText(frame, text, position, font, font_size, (255, 0, 0), 6, cv2.LINE_AA)
     return frame
-def resize_line(line):
+
+
+def resize_line(line, parameters):
     x1, y1, x2, y2 = line
     slope = calculate_slope(x1, x2, y1, y2)
     intercept = y1 - slope * x1
-    y1 = LOWER_BOUND
-    y2 = UPPER_BOUND
+    y1 = parameters.lower_bound
+    y2 = parameters.upper_bound
     x1 = int((y1 - intercept) / slope)
     x2 = int((y2 - intercept) / slope)
     return x1, y1, x2, y2
-def mask_frame(img,vertices):
+
+
+def mask_frame(img, vertices):
     mask = np.zeros_like(img)
-    mask = cv2.fillPoly(mask, [vertices], (255, 255, 255) , 0)
+    mask = cv2.fillPoly(mask, [vertices], (255, 255, 255), 0)
     masked_img = cv2.bitwise_and(img, mask)
     return masked_img
-def draw_lines(img, lines, color=(0, 255, 0), thickness=6):
+
+
+def draw_lines(img, lines, parameters, color=(0, 255, 0), thickness=6):
     for line in lines:
-        x1, y1, x2, y2 = resize_line(line)
+        x1, y1, x2, y2 = resize_line(line, parameters)
         img = cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness)
     return img
+
+
 def calculate_slope(x1, x2, y1, y2):
     return 0 if (x1 == x2) else (y1 - y2) / (x1 - x2)
+
+
 def filter_lines(lines, slope_threshold=(0.5, 2)):
-    result = []
+    right_lines = []
+    left_lines = []
     if lines is not None:
         for line in lines:
             x1, y1, x2, y2 = line[0]
             slope = calculate_slope(x1, x2, y1, y2)
             if slope_threshold[0] < abs(slope) < slope_threshold[1]:
-                result.append(line[0])
+                if slope > 0:
+                    right_lines.append(line[0])
+                else:
+                    left_lines.append(line[0])
 
-    return np.array(result)
-def preprocess_frame(frame):
+    return np.array(left_lines), np.array(right_lines)
+
+
+def preprocess_frame(frame, parameters):
     temp = frame.copy()
 
     temp = cv2.cvtColor(temp, cv2.COLOR_BGR2GRAY)  # brg to gray
-    # temp = temp[..., 0]
 
     # Apply gamma correction
-    # gamma = 0.92
-    # temp = np.uint8(cv2.pow(temp / 255.0, gamma) * 255)
+    if parameters.is_night:
+        gamma = 0.92
+        temp = np.uint8(cv2.pow(temp / 255.0, gamma) * 255)
 
-    # # Apply CLAHE for local contrast enhancement
-    # clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(16, 16))
-    # temp = clahe.apply(temp)
-    # #
-    # # plt.figure(figsize=FIGSIZE)
-    # # plt.imshow(enhanced, cmap='gray')
-    # # plt.title("enhanced")
-    # # plt.show()
-
-    # temp = cv2.equalizeHist(temp)
-    if (show):
+    if show:
         plt.figure(figsize=FIGSIZE)
         plt.imshow(temp, cmap='gray')
         plt.title("gamma")
         plt.show()
 
     temp = cv2.GaussianBlur(temp, (7, 7), 0)  # reducing noise
-    if (show):
-        plt.figure(figsize=FIGSIZE)
-        plt.imshow(temp, cmap='gray')
-        plt.title("Gaussian")
-        plt.show()
-    #day = 150 night = 115
-    _, temp = cv2.threshold(temp, 150, 255, cv2.THRESH_BINARY)  # applying threshold to emphasize white
 
-    if (show):
+    if show:
         plt.figure(figsize=FIGSIZE)
         plt.imshow(temp, cmap='gray')
-        plt.title("Threshold")
+        plt.title("gaussian")
+        plt.show()
+
+    _, temp = cv2.threshold(temp, parameters.lower_threshold, 255,
+                            cv2.THRESH_BINARY)  # applying threshold to emphasize white
+
+    if show:
+        plt.figure(figsize=FIGSIZE)
+        plt.imshow(temp, cmap='gray')
+        plt.title("threshold")
         plt.show()
 
     temp = cv2.Canny(temp, 5, 100)  # applying canny to get edges
 
-    if (show):
+    if show:
         plt.figure(figsize=FIGSIZE)
         plt.imshow(temp, cmap='gray')
         plt.title("Canny")
         plt.show()
 
-    return mask_frame(temp,VERTICES_LEFT), mask_frame(temp,VERTICES_RIGHT)
+    return mask_frame(temp, parameters.vertices)
 
-#TODO maybe change the way we detect line change, we have ambiguity in case both left and right are empty
+
 def get_line_and_detect_change(left_lines, right_lines):
     best_lines = []
 
@@ -124,7 +136,9 @@ def get_line_and_detect_change(left_lines, right_lines):
         best_lines.append(right_line)
         best_lines.append(left_line)
         return best_lines, False, ""
-def check_if_turning(change,direction, is_turning, turning_direction, counter_legal_lane_change):
+
+
+def check_if_turning(change, direction, is_turning, turning_direction, counter_legal_lane_change):
     turning = False
     turning_counter = 0
     if change:
@@ -149,8 +163,11 @@ def check_if_turning(change,direction, is_turning, turning_direction, counter_le
 
     return turning, is_turning, turning_direction, counter_legal_lane_change, turning_counter
 
+
 if __name__ == "__main__":
     video_path = 'day.mp4'
+    parameters = parameters_day
+
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
@@ -169,75 +186,63 @@ if __name__ == "__main__":
     turning_direction = None
     turning_counter = 0
     turning = False
+    frames = []
 
-    # Define the start and end time for the 20-second segment
-    start_time = 0
-    end_time = start_time + 19  # seconds
+    # TODO for debug need to remove
+    start_time = 16
+    end_time = start_time + 10  # seconds
 
     # Set frame rate and calculate the frames to capture
     fps = cap.get(cv2.CAP_PROP_FPS)
     start_frame = int(start_time * fps)
     end_frame = int(end_time * fps)
 
-    # Go over the different segments
-    frames = []
     #for frame_num in range(start_frame, end_frame):
-    for frame_num in range(0, frame_count):
     #for frame_num in range(0, 1):
+    # TODO for debug need to remove
+
+    for frame_num in range(0, frame_count):
+
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
         ret, frame = cap.read()
+
         if not ret:
             print("Could not load the frame")
             break
 
         res = frame.copy()
         image = frame.copy()
-        image2 = frame.copy()
+        debug = frame.copy()  # TODO need to remove
         lines = []
 
-        # plt.figure(figsize=FIGSIZE)
-        # plt.imshow(image)
-        # plt.title("Original Image")
-        # plt.show()
-
         if not turning:
-            left_mask, right_mask = preprocess_frame(image)
+            mask = preprocess_frame(image, parameters)
 
-            if(show):
+            if show:
                 plt.figure(figsize=FIGSIZE)
-                plt.imshow(left_mask, cmap="gray")
-                plt.title("left_mask")
+                plt.imshow(mask, cmap="gray")
+                plt.title("mask")
                 plt.show()
 
+            lines = cv2.HoughLinesP(mask, rho=1, theta=np.pi / 180, threshold=10, minLineLength=parameters.min_line_length,
+                                    maxLineGap=100)
+
+            if show:
+                for line in lines:
+                    x1, y1, x2, y2 = line[0]
+                    cv2.line(debug, (x1, y1), (x2, y2), (255, 0, 0), 2)
+
                 plt.figure(figsize=FIGSIZE)
-                plt.imshow(right_mask, cmap="gray")
-                plt.title("right_mask")
+                plt.imshow(debug)
+                plt.title("lines")
                 plt.show()
 
-            left_lines = cv2.HoughLinesP(left_mask, rho=1, theta=np.pi / 180, threshold=10, minLineLength=10, maxLineGap=100)
-            right_lines = cv2.HoughLinesP(right_mask, rho=1, theta=np.pi / 180, threshold=10, minLineLength=10, maxLineGap=1000)
-
-            # for line in right_lines:
-            #     x1, y1, x2, y2 = line[0]
-            #     cv2.line(image2, (x1, y1), (x2, y2), (255,0,0), 2)
-
-            # plt.figure(figsize=FIGSIZE)
-            # plt.imshow(image2)
-            # plt.title("lines")
-            # plt.show()
-
-            left_lines = filter_lines(left_lines, slope_threshold=(0.5, 2))
-            right_lines = filter_lines(right_lines, slope_threshold=(0.5, 2))
-
-            res_right = res.copy()
-            res_left = res.copy()
-
-            res_right = draw_lines(res_right, right_lines)
-            res_left = draw_lines(res_left, left_lines)
+            left_lines, right_lines = filter_lines(lines, slope_threshold=(0.5, 2))
 
             lines, change, direction = get_line_and_detect_change(left_lines, right_lines)
 
-            turning, is_turning, turning_direction, counter_legal_lane_change, turning_counter = check_if_turning(change, direction, is_turning, turning_direction, counter_legal_lane_change)
+            turning, is_turning, turning_direction, counter_legal_lane_change, turning_counter = check_if_turning(
+                change, direction, is_turning, turning_direction, counter_legal_lane_change)
 
         if turning:
             res = add_text_overlay(res, turning_direction, 4)
@@ -245,8 +250,8 @@ if __name__ == "__main__":
             if turning_counter == 0:
                 turning = False
         else:
-            res = draw_lines(res, lines)
-        if(show):
+            res = draw_lines(res, lines, parameters)
+        if (show):
             plt.figure(figsize=FIGSIZE)
             plt.imshow(res)
             plt.title(frame_num)
@@ -254,11 +259,11 @@ if __name__ == "__main__":
 
         frames.append(res)
 
-    out = cv2.VideoWriter('temp.avi',cv2.VideoWriter_fourcc(*'DIVX'), WANTED_FPS, (frame_width, frame_height))
-    
+    out = cv2.VideoWriter('temp.avi', cv2.VideoWriter_fourcc(*'DIVX'), WANTED_FPS, (frame_width, frame_height))
+
     for frame in frames:
         out.write(frame)
-    
+
     out.release()
 
     # Release the video capture object
