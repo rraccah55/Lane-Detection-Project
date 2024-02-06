@@ -12,6 +12,13 @@ VERTICES_LEFT = np.array([[450, 1070], [900,620], [1000, 620], [1000, 1070]], np
 VERTICES_RIGHT = np.array([[1000, 650], [1250, 650],[1700, 1070], [1000, 1070]], np.int32).reshape((-1, 1, 2))
 NUM_OF_FRAME_FOR_LANE_CHANGE = 60
 
+
+# UPPER_BOUND = 410
+# LOWER_BOUND = 550
+# VERTICES_LEFT = np.array([[450, 530], [450,380], [380, 380], [180, 530]], np.int32).reshape((-1, 1, 2))
+# VERTICES_RIGHT = np.array([[600, 380], [500, 380], [550, 530], [750, 530]], np.int32).reshape((-1, 1, 2))
+
+
 show = False
 def add_text_overlay(frame, text, font_size=1.0):
     # Choose font and position
@@ -56,21 +63,59 @@ def preprocess_frame(frame):
     temp = frame.copy()
 
     temp = cv2.cvtColor(temp, cv2.COLOR_BGR2GRAY)  # brg to gray
+    # temp = temp[..., 0]
+
+    # Apply gamma correction
+    # gamma = 0.92
+    # temp = np.uint8(cv2.pow(temp / 255.0, gamma) * 255)
+
+    # # Apply CLAHE for local contrast enhancement
+    # clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(16, 16))
+    # temp = clahe.apply(temp)
+    # #
+    # # plt.figure(figsize=FIGSIZE)
+    # # plt.imshow(enhanced, cmap='gray')
+    # # plt.title("enhanced")
+    # # plt.show()
+
+    # temp = cv2.equalizeHist(temp)
+    if (show):
+        plt.figure(figsize=FIGSIZE)
+        plt.imshow(temp, cmap='gray')
+        plt.title("gamma")
+        plt.show()
 
     temp = cv2.GaussianBlur(temp, (7, 7), 0)  # reducing noise
-
+    if (show):
+        plt.figure(figsize=FIGSIZE)
+        plt.imshow(temp, cmap='gray')
+        plt.title("Gaussian")
+        plt.show()
+    #day = 150 night = 115
     _, temp = cv2.threshold(temp, 150, 255, cv2.THRESH_BINARY)  # applying threshold to emphasize white
+
+    if (show):
+        plt.figure(figsize=FIGSIZE)
+        plt.imshow(temp, cmap='gray')
+        plt.title("Threshold")
+        plt.show()
 
     temp = cv2.Canny(temp, 5, 100)  # applying canny to get edges
 
+    if (show):
+        plt.figure(figsize=FIGSIZE)
+        plt.imshow(temp, cmap='gray')
+        plt.title("Canny")
+        plt.show()
+
     return mask_frame(temp,VERTICES_LEFT), mask_frame(temp,VERTICES_RIGHT)
 
-#TODO maybe change the way we detect line change
+#TODO maybe change the way we detect line change, we have ambiguity in case both left and right are empty
 def get_line_and_detect_change(left_lines, right_lines):
     best_lines = []
 
     if left_lines.size == 0:
-        return left_lines, True, "Changing to left lane"
+        return best_lines, True, "Changing to left lane"
     elif right_lines.size == 0:
         return best_lines, True, "Changing to right lane"
     else:
@@ -105,7 +150,7 @@ def check_if_turning(change,direction, is_turning, turning_direction, counter_le
     return turning, is_turning, turning_direction, counter_legal_lane_change, turning_counter
 
 if __name__ == "__main__":
-    video_path = 'video.mp4'
+    video_path = 'day.mp4'
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
@@ -125,10 +170,21 @@ if __name__ == "__main__":
     turning_counter = 0
     turning = False
 
+    # Define the start and end time for the 20-second segment
+    start_time = 0
+    end_time = start_time + 19  # seconds
+
+    # Set frame rate and calculate the frames to capture
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    start_frame = int(start_time * fps)
+    end_frame = int(end_time * fps)
+
     # Go over the different segments
     frames = []
+    #for frame_num in range(start_frame, end_frame):
     for frame_num in range(0, frame_count):
-        cap.set(cv2.CAP_PROP_POS_FRAMES,frame_num)
+    #for frame_num in range(0, 1):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
         ret, frame = cap.read()
         if not ret:
             print("Could not load the frame")
@@ -136,13 +192,39 @@ if __name__ == "__main__":
 
         res = frame.copy()
         image = frame.copy()
+        image2 = frame.copy()
         lines = []
+
+        # plt.figure(figsize=FIGSIZE)
+        # plt.imshow(image)
+        # plt.title("Original Image")
+        # plt.show()
 
         if not turning:
             left_mask, right_mask = preprocess_frame(image)
 
-            left_lines = cv2.HoughLinesP(left_mask, rho=1, theta=np.pi / 180, threshold=10, minLineLength=50, maxLineGap=100)
-            right_lines = cv2.HoughLinesP(right_mask, rho=1, theta=np.pi / 180, threshold=10, minLineLength=50, maxLineGap=1000)
+            if(show):
+                plt.figure(figsize=FIGSIZE)
+                plt.imshow(left_mask, cmap="gray")
+                plt.title("left_mask")
+                plt.show()
+
+                plt.figure(figsize=FIGSIZE)
+                plt.imshow(right_mask, cmap="gray")
+                plt.title("right_mask")
+                plt.show()
+
+            left_lines = cv2.HoughLinesP(left_mask, rho=1, theta=np.pi / 180, threshold=10, minLineLength=10, maxLineGap=100)
+            right_lines = cv2.HoughLinesP(right_mask, rho=1, theta=np.pi / 180, threshold=10, minLineLength=10, maxLineGap=1000)
+
+            # for line in right_lines:
+            #     x1, y1, x2, y2 = line[0]
+            #     cv2.line(image2, (x1, y1), (x2, y2), (255,0,0), 2)
+
+            # plt.figure(figsize=FIGSIZE)
+            # plt.imshow(image2)
+            # plt.title("lines")
+            # plt.show()
 
             left_lines = filter_lines(left_lines, slope_threshold=(0.5, 2))
             right_lines = filter_lines(right_lines, slope_threshold=(0.5, 2))
@@ -164,9 +246,14 @@ if __name__ == "__main__":
                 turning = False
         else:
             res = draw_lines(res, lines)
+        if(show):
+            plt.figure(figsize=FIGSIZE)
+            plt.imshow(res)
+            plt.title(frame_num)
+            plt.show()
 
         frames.append(res)
-    
+
     out = cv2.VideoWriter('temp.avi',cv2.VideoWriter_fourcc(*'DIVX'), WANTED_FPS, (frame_width, frame_height))
     
     for frame in frames:
