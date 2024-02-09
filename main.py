@@ -1,5 +1,4 @@
-from HoughLinesParameters import HoughLinesParameters
-from Parameters import Parameters
+from Parameters import Parameters, HoughLinesParameters
 from Algorithm import Algorithm
 
 hough_parameters_day = HoughLinesParameters()

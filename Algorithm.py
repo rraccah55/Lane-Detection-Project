@@ -170,7 +170,7 @@ class Algorithm:
     def is_crosswalk(self):
         return self.parameters.algo_type == 'crosswalk'
 
-    def detec_lane(self, frame):
+    def detect_lane(self, frame):
         res = frame.copy()
         image = frame.copy()
         lines = []
@@ -254,7 +254,7 @@ class Algorithm:
                 break
                 
             if not self.is_crosswalk():
-                res = self.detec_lane(frame)
+                res = self.detect_lane(frame)
             else:
                 res = self.detect_crosswalk(frame)
             
