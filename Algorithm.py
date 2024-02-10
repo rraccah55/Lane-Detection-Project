@@ -7,18 +7,18 @@ FIGSIZE = (20, 20)
 FRAMES_UNTIL_TURNING = 10
 NUM_OF_FRAME_FOR_LANE_CHANGE = 60
 LINE_SLOPE = (0.5, 2)
-SHOW = False  # for debug
+SHOW = True  # for debug
 
 class Algorithm:
     def __init__(self, parameters):
         self.parameters = parameters
         
-        if not self.is_crosswalk():
-            self.counter_legal_lane_change = 0
-            self.is_turning = False
-            self.turning_direction = None
-            self.turning_counter = 0
-            self.turning = False
+        # Parameters for lane changing
+        self.counter_legal_lane_change = 0
+        self.is_turning = False
+        self.turning_direction = None
+        self.turning_counter = 0
+        self.turning = False
     
     def add_text_overlay(self, frame, text, font_size=1.0):
         # Choose font and position
@@ -69,17 +69,15 @@ class Algorithm:
 
         return np.array(left_lines), np.array(right_lines)
 
-    def preprocess_frame(self, frame):
+    def preprocess_frame(self, frame, is_for_crosswalk):
         temp = frame.copy()
 
         # brg to gray
         temp = cv2.cvtColor(temp, cv2.COLOR_BGR2GRAY)
 
         # Apply gamma correction
-        if self.is_night():
-            gamma = 0.92
-            temp = np.uint8(cv2.pow(temp / 255.0, gamma) * 255)
-            
+        if self.parameters.gamma_correction is not None:
+            temp = np.uint8(cv2.pow(temp / 255.0, self.parameters.gamma_correction) * 255)
             self.show_image(temp, title="gamma", cmap='gray')
 
         # reducing noise
@@ -90,14 +88,13 @@ class Algorithm:
         _, temp = cv2.threshold(temp, self.parameters.lower_threshold, 255, cv2.THRESH_BINARY)
         self.show_image(temp, title="threshold", cmap='gray')
 
-        if not self.is_crosswalk():
+        if not is_for_crosswalk:
             # applying canny to get edges
             temp = cv2.Canny(temp, 5, 100)
             self.show_image(temp, title="Canny", cmap='gray')
-
-        # mask the frame to keep only the relevant edges
-        temp = self.mask_frame(temp, self.parameters.vertices)
         
+        # mask the frame to keep only the relevant edges
+        temp = self.mask_frame(temp, self.parameters.vertices if not is_for_crosswalk else self.parameters.crosswalk_parameters.vertices)
         self.show_image(temp, title="preprocess", cmap='gray')
         
         return temp
@@ -160,15 +157,6 @@ class Algorithm:
         plt.imshow(img, cmap=cmap)
         plt.title(title)
         plt.show()
-        
-    def is_day(self):
-        return self.parameters.algo_type == 'day'
-    
-    def is_night(self):
-        return self.parameters.algo_type == 'night'
-    
-    def is_crosswalk(self):
-        return self.parameters.algo_type == 'crosswalk'
 
     def detect_lane(self, frame):
         res = frame.copy()
@@ -176,7 +164,7 @@ class Algorithm:
         lines = []
 
         if not self.turning:
-            image = self.preprocess_frame(image)
+            image = self.preprocess_frame(image, False)
 
             hough_parameters = self.parameters.hough_parameters
             lines = cv2.HoughLinesP(image, rho=hough_parameters.rho, theta=hough_parameters.theta, threshold=hough_parameters.threshold, 
@@ -201,7 +189,7 @@ class Algorithm:
     def detect_crosswalk(self, frame):
         res = frame.copy()
         image = frame.copy()
-        image = self.preprocess_frame(image)
+        image = self.preprocess_frame(image, True)
         
         contours, _hierarchy = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
@@ -252,11 +240,12 @@ class Algorithm:
             if not ret:
                 print("Could not load the frame")
                 break
-                
-            if not self.is_crosswalk():
-                res = self.detect_lane(frame)
-            else:
-                res = self.detect_crosswalk(frame)
+            
+            res = self.detect_lane(frame)
+            self.show_image(res, title="after_lane")
+            
+            if self.parameters.crosswalk_parameters is not None:
+                res = self.detect_crosswalk(res)
             
             self.show_image(res, title=frame_num)
 
