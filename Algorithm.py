@@ -7,7 +7,7 @@ FIGSIZE = (20, 20)
 FRAMES_UNTIL_TURNING = 10
 NUM_OF_FRAME_FOR_LANE_CHANGE = 60
 LINE_SLOPE = (0.5, 2)
-SHOW = True  # for debug
+SHOW = False  # for debug
 
 class Algorithm:
     def __init__(self, parameters):
@@ -242,11 +242,13 @@ class Algorithm:
                 break
             
             res = self.detect_lane(frame)
+
             self.show_image(res, title="after_lane")
             
             if self.parameters.crosswalk_parameters is not None:
                 res = self.detect_crosswalk(res)
-            
+
+
             self.show_image(res, title=frame_num)
 
             frames.append(res)
