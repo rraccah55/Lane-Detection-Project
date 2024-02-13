@@ -5,6 +5,7 @@ import cv2
 # hyperparameters
 FIGSIZE = (20, 20)
 FRAMES_UNTIL_TURNING = 10
+FRAMES_AFTER_CROSSWALK = 20
 NUM_OF_FRAME_FOR_LANE_CHANGE = 60
 LINE_SLOPE = (0.5, 2)
 SHOW = False  # for debug
@@ -195,6 +196,8 @@ class Algorithm:
         
         rectangleList = []
         
+        detected = False
+        
         for contour in contours:
             if cv2.contourArea(contour) < 1000:
                 continue
@@ -202,17 +205,25 @@ class Algorithm:
             (x,y,w,h) = cv2.boundingRect(contour)
             
             rectangleList.append([(x, y), (x+w, y+h)])
-            # cv2.rectangle(res, (x,y), (x+w,y+h), (0,255,0), 2)
-            #cv2.drawContours(temp, contour, -1, (0, 225, 0), 3)
         
         if len(rectangleList) > 4:
+            detected = True
             for pointA, pointB in rectangleList:
                 cv2.rectangle(res, pointA, pointB, (0,255,0), 2)
                 
-        # (x,y,w,h) = cv2.groupRectangles(rectangleList, 1, eps = 0.2)
-        # cv2.rectangle(frame, (x,y), (x+w,y+h), (0,255,0), 2)
-        # self.show_image(frame, title="Contours", show=True)
-        return res
+        return res, detected
+    
+    def should_calculate_lanes_after_crosswalk(self, detected_crosswalk, is_on_crosswalk, crosswalk_counter):      
+        if detected_crosswalk:
+            return False, 0
+        
+        if not detected_crosswalk and is_on_crosswalk:
+            return False, 1
+        
+        if crosswalk_counter < FRAMES_AFTER_CROSSWALK and crosswalk_counter > 0:
+            return False, crosswalk_counter + 1
+        
+        return True, 0
     
     def run(self, video_path, out_path):
         cap = cv2.VideoCapture(video_path)
@@ -232,24 +243,31 @@ class Algorithm:
             print(f"{frame_count=}, {fps=}, {frame_width=}, {frame_height=}")
             
         frames = []
+        is_on_crosswalk = False
+        crosswalk_counter = 0
 
         for frame_num in range(0, frame_count, fps // wanted_fps):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
             ret, frame = cap.read()
+            res = frame.copy()
 
             if not ret:
                 print("Could not load the frame")
                 break
             
-            res = self.detect_lane(frame)
-
-            self.show_image(res, title="after_lane")
+            detected_crosswalk = False
             
             if self.parameters.crosswalk_parameters is not None:
-                res = self.detect_crosswalk(res)
-
-
-            self.show_image(res, title=frame_num)
+                res, detected_crosswalk = self.detect_crosswalk(res)
+            
+            self.show_image(res, title="after_crosswalk")
+            
+            should_run_detect_lane, crosswalk_counter = self.should_calculate_lanes_after_crosswalk(detected_crosswalk, is_on_crosswalk, crosswalk_counter)
+            is_on_crosswalk = detected_crosswalk
+            
+            if should_run_detect_lane:
+                res = self.detect_lane(res)
+                self.show_image(res, title=frame_num)
 
             frames.append(res)
 
